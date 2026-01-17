@@ -31,16 +31,11 @@ if check_password():
                     try:
                         df = pd.read_excel(path) if file.endswith('.xlsx') else pd.read_csv(path)
                         df.columns = df.columns.str.strip()
-                        
-                        # 項目名のマッピング
                         if 'Hitter First Name' in df.columns: df['Player'] = df['Hitter First Name']
                         if 'Hit Created At' in df.columns: df['Date'] = pd.to_datetime(df['Hit Created At']).dt.date
-                        
-                        # 数値変換
                         cols = {'ExitSpeed (KMH)': 'Speed', 'Angle': 'Angle', 'Distance (Meters)': 'Dist'}
                         for orig, target in cols.items():
                             if orig in df.columns: df[target] = pd.to_numeric(df[orig], errors='coerce')
-                        
                         df = df[df['Speed'] > 0].dropna(subset=['Speed'])
                         all_data.append(df)
                     except: continue
@@ -67,23 +62,32 @@ if check_password():
                 p_avg = prev_df[prev_df['Date'] == last_date].groupby('Player')['Speed'].mean()
                 summary['平均(前回比)'] = (summary['平均速度'] / p_avg * 100).map(lambda x: f"{x:.1f}%" if pd.notnull(x) else "-")
 
-            # 小数点第1位で表示
-            st.dataframe(summary.sort_values('MAX速度', ascending=False).style.format(precision=1), use_container_width=True)
+            # --- 中央揃えの設定 ---
+            # 表全体のスタイルを定義
+            styled_df = summary.sort_values('MAX速度', ascending=False).style.format(precision=1).set_properties(**{
+                'text-align': 'center' # 文字を中央揃え
+            }).set_table_styles([{
+                'selector': 'th', # ヘッダー行も中央揃え
+                'props': [('text-align', 'center')]
+            }])
+
+            st.dataframe(styled_df, use_container_width=True)
 
         else:
+            # 個人分析（こちらも必要に応じて中央揃えに調整）
             st.header("👤 個人深掘り分析")
             player = st.sidebar.selectbox("選手を選択", sorted(df['Player'].unique()))
             p_df = df[df['Player'] == player].copy()
 
-            # 1. 速度推移
             st.subheader("📈 打球速度の推移")
             trend = p_df.groupby('Date')['Speed'].agg(['mean', 'max', 'count']).reset_index()
             trend.columns = ['日付', '平均速度', '最大速度', '数']
             
             fig_trend = px.line(trend, x='日付', y=['平均速度', '最大速度'], markers=True)
             st.plotly_chart(fig_trend, use_container_width=True)
-            # 表のフォーマットを小数点第1位に
-            st.table(trend.sort_values('日付', ascending=False).set_index('日付').style.format(precision=1))
+            
+            # 個人分析の表も中央揃え
+            st.table(trend.sort_values('日付', ascending=False).set_index('日付').style.format(precision=1).set_properties(**{'text-align': 'center'}))
 
             col1, col2 = st.columns(2)
             with col1:
@@ -91,10 +95,7 @@ if check_password():
                 p_df['is_barrel'] = (p_df['Speed'] >= 140) & (p_df['Angle'].between(10, 30))
                 barrel_rate = p_df['is_barrel'].mean() * 100
                 st.metric("バレル率", f"{barrel_rate:.1f} %")
-                
-                fig_scatter = px.scatter(p_df, x="Angle", y="Speed", color="is_barrel",
-                                         color_discrete_map={True: "red", False: "gray"},
-                                         range_x=[-10, 50], range_y=[70, 180])
+                fig_scatter = px.scatter(p_df, x="Angle", y="Speed", color="is_barrel", color_discrete_map={True: "red", False: "gray"}, range_x=[-10, 50], range_y=[70, 180])
                 fig_scatter.add_shape(type="rect", x0=10, y0=140, x1=30, y1=175, line=dict(color="Red"), opacity=0.1)
                 st.plotly_chart(fig_scatter, use_container_width=True)
 
@@ -105,7 +106,6 @@ if check_password():
                     st.plotly_chart(fig_dir, use_container_width=True)
             
             st.subheader("📋 詳細スイング履歴")
-            st.dataframe(p_df[['Date', 'Speed', 'Angle', 'Dist']].sort_values('Date', ascending=False).style.format(precision=1), hide_index=True)
-
+            st.dataframe(p_df[['Date', 'Speed', 'Angle', 'Dist']].sort_values('Date', ascending=False).style.format(precision=1).set_properties(**{'text-align': 'center'}), hide_index=True)
     else:
         st.info("dataフォルダにCSVファイルを入れてください。")
