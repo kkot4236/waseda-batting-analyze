@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
 import os
 import plotly.express as px
 
@@ -21,38 +20,33 @@ def check_password():
 if check_password():
     st.set_page_config(layout="wide", page_title="Waseda Hitting Analyze")
 
-    # --- PDFのデザインを再現するカスタムCSS ---
+    # --- デザインの定義 ---
     st.markdown("""
         <style>
         .feedback-table {
-            margin-left: auto;
-            margin-right: auto;
+            margin: auto;
             border-collapse: collapse;
-            width: 100%;
-            font-family: sans-serif;
-            font-size: 16px;
+            width: 90%;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            border: 1px solid #333;
         }
-        /* ヘッダーのデザイン：グレー背景に白文字 */
         .feedback-table th {
-            background-color: #555555 !important;
+            background-color: #444 !important;
             color: white !important;
+            padding: 12px;
+            border: 1px solid #333;
             text-align: center !important;
-            padding: 12px !important;
-            border: 1px solid #ddd;
         }
-        /* セルのデザイン：中央揃え */
         .feedback-table td {
+            padding: 10px;
+            border: 1px solid #ccc;
             text-align: center !important;
-            padding: 10px !important;
-            border: 1px solid #ddd;
+            font-weight: 500;
         }
-        /* 1行おきに色を変える（縞模様） */
-        .feedback-table tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
-        /* マウスを乗せた時にハイライト */
-        .feedback-table tr:hover {
-            background-color: #f1f1f1;
+        /* バレル（高速打球）用の背景色クラス */
+        .high-speed {
+            background-color: #ffcccc !important; /* 薄い赤 */
+            color: #b30000;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -85,61 +79,63 @@ if check_password():
         if mode == "チーム全体分析":
             st.header("📊 チーム打球速度ランキング")
             all_dates = sorted(df['Date'].unique(), reverse=True)
-            selected_dates = st.multiselect("分析対象日を選択", all_dates, default=[all_dates[0]])
+            selected_dates = st.multiselect("日付を選択", all_dates, default=[all_dates[0]])
             
-            if not selected_dates:
-                st.warning("日付を選択してください")
-            else:
+            if selected_dates:
                 curr_df = df[df['Date'].isin(selected_dates)]
                 summary = curr_df.groupby('Player').agg({'Speed': ['mean', 'max'], 'Angle': 'mean', 'Dist': 'max'})
                 summary.columns = ['平均速度', 'MAX速度', '平均角度', '最大飛距離']
                 
-                # 前回の最新日と比較
+                # 前回の最新日と比較（差分計算）
                 prev_dates = [d for d in all_dates if d not in selected_dates and d < max(selected_dates)]
                 if prev_dates:
-                    last_prev_date = max(prev_dates)
-                    p_avg = df[df['Date'] == last_prev_date].groupby('Player')['Speed'].mean()
-                    p_max = df[df['Date'] == last_prev_date].groupby('Player')['Speed'].max()
-                    summary['平均比'] = (summary['平均速度'] / p_avg * 100).map(lambda x: f"{x:.0f}%" if pd.notnull(x) else "-")
-                    summary['MAX比'] = (summary['MAX速度'] / p_max * 100).map(lambda x: f"{x:.0f}%" if pd.notnull(x) else "-")
+                    last_prev = max(prev_dates)
+                    p_avg = df[df['Date'] == last_prev].groupby('Player')['Speed'].mean()
+                    summary['前回平均比'] = (summary['平均速度'] / p_avg * 100).map(lambda x: f"{x:.0f}%" if pd.notnull(x) else "-")
 
                 display_df = summary.sort_values('MAX速度', ascending=False).reset_index()
+
+                # --- HTMLを手動で構築（条件付き色分け） ---
+                table_html = '<table class="feedback-table"><thead><tr>'
+                for col in display_df.columns:
+                    table_html += f'<th>{col}</th>'
+                table_html += '</tr></thead><tbody>'
+
+                for _, row in display_df.iterrows():
+                    table_html += '<tr>'
+                    for i, col in enumerate(display_df.columns):
+                        val = row[col]
+                        # MAX速度が140以上のセルの背景を変える
+                        cell_class = ' class="high-speed"' if col == 'MAX速度' and val >= 140 else ''
+                        
+                        # 数値のフォーマット
+                        display_val = f"{val:.1f}" if isinstance(val, (int, float)) else str(val)
+                        table_html += f'<td{cell_class}>{display_val}</td>'
+                    table_html += '</tr>'
+                table_html += '</tbody></table>'
                 
-                # HTML変換（中央揃えクラスを適用）
-                html_table = display_df.to_html(classes='feedback-table', index=False, justify='center', float_format='%.1f')
-                st.write(html_table, unsafe_allow_html=True)
+                st.write(table_html, unsafe_allow_html=True)
 
         else:
-            # 個人分析
-            st.header("👤 個人深掘り分析")
-            player = st.sidebar.selectbox("選手を選択", sorted(df['Player'].unique()))
+            # 個人分析（以前のロジックを維持しつつ、デザインを統一）
+            st.header(f"👤 {st.sidebar.selectbox('選手を選択', sorted(df['Player'].unique()), key='psel')} の分析")
+            player = st.session_state.psel
             p_df = df[df['Player'] == player].copy()
 
-            st.subheader("📈 打球速度の推移")
+            # 速度推移グラフ
             trend = p_df.groupby('Date')['Speed'].agg(['mean', 'max', 'count']).reset_index()
-            trend.columns = ['日付', '平均速度', '最大速度', 'スイング数']
-            fig_trend = px.line(trend, x='日付', y=['平均速度', '最大速度'], markers=True)
-            st.plotly_chart(fig_trend, use_container_width=True)
-            
-            # 個人分析の表も同じデザインに
-            st.write(trend.sort_values('日付', ascending=False).to_html(classes='feedback-table', index=False, justify='center', float_format='%.1f'), unsafe_allow_html=True)
+            fig = px.line(trend, x='Date', y=['mean', 'max'], markers=True, title="打球速度推移")
+            st.plotly_chart(fig, use_container_width=True)
 
-            col1, col2 = st.columns(2)
-            with col1:
-                st.subheader("🎯 バレルゾーン分析")
-                p_df['is_barrel'] = (p_df['Speed'] >= 140) & (p_df['Angle'].between(10, 30))
-                st.metric("バレル率", f"{p_df['is_barrel'].mean()*100:.1f} %")
-                fig_scatter = px.scatter(p_df, x="Angle", y="Speed", color="is_barrel", color_discrete_map={True: "red", False: "gray"}, range_x=[-10, 50], range_y=[70, 180])
-                fig_scatter.add_shape(type="rect", x0=10, y0=140, x1=30, y1=175, line=dict(color="Red"), opacity=0.1)
-                st.plotly_chart(fig_scatter, use_container_width=True)
+            # バレル率の表示
+            p_df['is_barrel'] = (p_df['Speed'] >= 140) & (p_df['Angle'].between(10, 30))
+            st.metric("バレル率", f"{p_df['is_barrel'].mean()*100:.1f} %")
 
-            with col2:
-                st.subheader("🚀 打球方向分布")
-                if 'Direction' in p_df.columns:
-                    fig_dir = px.histogram(p_df, x="Direction", range_x=[-45, 45], nbins=20)
-                    st.plotly_chart(fig_dir, use_container_width=True)
-            
-            st.subheader("📋 詳細スイング履歴")
+            # 詳細履歴
+            history_df = p_df[['Date', 'Speed', 'Angle', 'Dist']].sort_values('Date', ascending=False)
+            st.write(history_df.to_html(classes='feedback-table', index=False, justify='center', float_format='%.1f'), unsafe_allow_html=True)
+    else:
+        st.info("データを入れてください。")
             history_df = p_df[['Date', 'Speed', 'Angle', 'Dist']].sort_values('Date', ascending=False)
             st.write(history_df.to_html(classes='feedback-table', index=False, justify='center', float_format='%.1f'), unsafe_allow_html=True)
     else:
