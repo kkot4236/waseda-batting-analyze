@@ -43,6 +43,13 @@ if check_password():
 
     df = load_data()
 
+    # --- 中央揃え用のヘルパー関数 ---
+    def style_center(df_to_style, precision=1):
+        return df_to_style.style.format(precision=precision).set_table_styles([
+            {'selector': 'th', 'props': [('text-align', 'center')]},
+            {'selector': 'td', 'props': [('text-align', 'center')]}
+        ]).set_properties(**{'text-align': 'center'})
+
     if not df.empty:
         mode = st.sidebar.radio("メニュー", ["チーム全体分析", "個人詳細分析"])
 
@@ -62,32 +69,26 @@ if check_password():
                 p_avg = prev_df[prev_df['Date'] == last_date].groupby('Player')['Speed'].mean()
                 summary['平均(前回比)'] = (summary['平均速度'] / p_avg * 100).map(lambda x: f"{x:.1f}%" if pd.notnull(x) else "-")
 
-            # --- 中央揃えの設定 ---
-            # 表全体のスタイルを定義
-            styled_df = summary.sort_values('MAX速度', ascending=False).style.format(precision=1).set_properties(**{
-                'text-align': 'center' # 文字を中央揃え
-            }).set_table_styles([{
-                'selector': 'th', # ヘッダー行も中央揃え
-                'props': [('text-align', 'center')]
-            }])
-
-            st.dataframe(styled_df, use_container_width=True)
+            # 名前（インデックス）も中央に寄せるために一度リセット
+            display_summary = summary.sort_values('MAX速度', ascending=False).reset_index()
+            
+            # 中央揃えを適用して表示
+            st.dataframe(style_center(display_summary), use_container_width=True, hide_index=True)
 
         else:
-            # 個人分析（こちらも必要に応じて中央揃えに調整）
             st.header("👤 個人深掘り分析")
             player = st.sidebar.selectbox("選手を選択", sorted(df['Player'].unique()))
             p_df = df[df['Player'] == player].copy()
 
             st.subheader("📈 打球速度の推移")
             trend = p_df.groupby('Date')['Speed'].agg(['mean', 'max', 'count']).reset_index()
-            trend.columns = ['日付', '平均速度', '最大速度', '数']
+            trend.columns = ['日付', '平均速度', '最大速度', 'スイング数']
             
             fig_trend = px.line(trend, x='日付', y=['平均速度', '最大速度'], markers=True)
             st.plotly_chart(fig_trend, use_container_width=True)
             
-            # 個人分析の表も中央揃え
-            st.table(trend.sort_values('日付', ascending=False).set_index('日付').style.format(precision=1).set_properties(**{'text-align': 'center'}))
+            # 表も中央揃え
+            st.dataframe(style_center(trend.sort_values('日付', ascending=False)), use_container_width=True, hide_index=True)
 
             col1, col2 = st.columns(2)
             with col1:
@@ -106,6 +107,7 @@ if check_password():
                     st.plotly_chart(fig_dir, use_container_width=True)
             
             st.subheader("📋 詳細スイング履歴")
-            st.dataframe(p_df[['Date', 'Speed', 'Angle', 'Dist']].sort_values('Date', ascending=False).style.format(precision=1).set_properties(**{'text-align': 'center'}), hide_index=True)
+            history_df = p_df[['Date', 'Speed', 'Angle', 'Dist']].sort_values('Date', ascending=False)
+            st.dataframe(style_center(history_df), use_container_width=True, hide_index=True)
     else:
         st.info("dataフォルダにCSVファイルを入れてください。")
