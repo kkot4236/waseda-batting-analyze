@@ -14,12 +14,31 @@ def check_password():
             st.session_state["password_correct"] = True
         else:
             st.session_state["password_correct"] = False
-    st.title("⚾️ 早稲田大学野球部 打撃分析")
+    st.title("⚾️ 早稲田大学野球部 打撃分析システム")
     st.text_input("パスワードを入力", type="password", on_change=password_entered, key="password_input")
     return False
 
 if check_password():
     st.set_page_config(layout="wide", page_title="Waseda Hitting Analyze")
+
+    # --- 中央揃えを強制するCSS ---
+    st.markdown("""
+        <style>
+        .centered-table {
+            margin-left: auto;
+            margin-right: auto;
+            text-align: center;
+            width: 100%;
+        }
+        .centered-table th, .centered-table td {
+            text-align: center !important;
+            padding: 10px !important;
+        }
+        [data-testid="stMetricValue"] {
+            text-align: center;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
     @st.cache_data
     def load_data():
@@ -43,39 +62,47 @@ if check_password():
 
     df = load_data()
 
-    # --- 中央揃え用のヘルパー関数 ---
-    def style_center(df_to_style, precision=1):
-        return df_to_style.style.format(precision=precision).set_table_styles([
-            {'selector': 'th', 'props': [('text-align', 'center')]},
-            {'selector': 'td', 'props': [('text-align', 'center')]}
-        ]).set_properties(**{'text-align': 'center'})
-
     if not df.empty:
         mode = st.sidebar.radio("メニュー", ["チーム全体分析", "個人詳細分析"])
 
         if mode == "チーム全体分析":
             st.header("📊 チーム打球速度ランキング")
+            
+            # --- 日付の複数選択 ---
             all_dates = sorted(df['Date'].unique(), reverse=True)
-            target_date = st.selectbox("分析対象日を選択", all_dates)
+            selected_dates = st.multiselect("分析対象日を選択（複数選ぶと合算されます）", all_dates, default=[all_dates[0]])
             
-            curr_df = df[df['Date'] == target_date]
-            prev_df = df[df['Date'] < target_date]
-            
-            summary = curr_df.groupby('Player').agg({'Speed': ['mean', 'max'], 'Angle': 'mean', 'Dist': 'max'})
-            summary.columns = ['平均速度', 'MAX速度', '平均角度', '最大飛距離']
-            
-            if not prev_df.empty:
-                last_date = prev_df['Date'].max()
-                p_avg = prev_df[prev_df['Date'] == last_date].groupby('Player')['Speed'].mean()
-                summary['平均(前回比)'] = (summary['平均速度'] / p_avg * 100).map(lambda x: f"{x:.1f}%" if pd.notnull(x) else "-")
+            if not selected_dates:
+                st.warning("日付を選択してください")
+            else:
+                # 選択された全日付のデータを抽出
+                curr_df = df[df['Date'].isin(selected_dates)]
+                
+                # 集計
+                summary = curr_df.groupby('Player').agg({
+                    'Speed': ['mean', 'max'],
+                    'Angle': 'mean',
+                    'Dist': 'max'
+                })
+                summary.columns = ['平均速度', 'MAX速度', '平均角度', '最大飛距離']
+                
+                # 最後に投げた日と比較（前週比用）
+                prev_dates = [d for d in all_dates if d not in selected_dates and d < max(selected_dates)]
+                if prev_dates:
+                    last_prev_date = max(prev_dates)
+                    p_avg = df[df['Date'] == last_prev_date].groupby('Player')['Speed'].mean()
+                    summary['平均(前回比)'] = (summary['平均速度'] / p_avg * 100).map(lambda x: f"{x:.1f}%" if pd.notnull(x) else "-")
 
-            # 名前（インデックス）も中央に寄せるために一度リセット
-            display_summary = summary.sort_values('MAX速度', ascending=False).reset_index()
-            
-            # 中央揃えを適用して表示
-            st.dataframe(style_center(display_summary), use_container_width=True, hide_index=True)
+                # 表の表示用加工
+                display_df = summary.sort_values('MAX速度', ascending=False).reset_index()
+                
+                # --- HTML/CSSで強制中央揃え ---
+                # PandasのHTML変換を使い、クラスを付与
+                html_table = display_df.to_html(classes='centered-table', index=False, justify='center', float_format='%.1f')
+                st.write(html_table, unsafe_allow_html=True)
 
         else:
+            # 個人分析
             st.header("👤 個人深掘り分析")
             player = st.sidebar.selectbox("選手を選択", sorted(df['Player'].unique()))
             p_df = df[df['Player'] == player].copy()
@@ -87,8 +114,8 @@ if check_password():
             fig_trend = px.line(trend, x='日付', y=['平均速度', '最大速度'], markers=True)
             st.plotly_chart(fig_trend, use_container_width=True)
             
-            # 表も中央揃え
-            st.dataframe(style_center(trend.sort_values('日付', ascending=False)), use_container_width=True, hide_index=True)
+            # 個人分析の表もHTMLで中央揃え
+            st.write(trend.sort_values('日付', ascending=False).to_html(classes='centered-table', index=False, justify='center', float_format='%.1f'), unsafe_allow_html=True)
 
             col1, col2 = st.columns(2)
             with col1:
@@ -108,6 +135,6 @@ if check_password():
             
             st.subheader("📋 詳細スイング履歴")
             history_df = p_df[['Date', 'Speed', 'Angle', 'Dist']].sort_values('Date', ascending=False)
-            st.dataframe(style_center(history_df), use_container_width=True, hide_index=True)
+            st.write(history_df.to_html(classes='centered-table', index=False, justify='center', float_format='%.1f'), unsafe_allow_html=True)
     else:
         st.info("dataフォルダにCSVファイルを入れてください。")
