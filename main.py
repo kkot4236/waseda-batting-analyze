@@ -43,9 +43,8 @@ if check_password():
             text-align: center !important;
             font-size: 16px;
         }
-        /* 色分けクラス */
-        .v-high { background-color: #ff4b4b !important; color: white !important; font-weight: bold; } /* 150以上 */
-        .high { background-color: #ffcccc !important; color: #b30000 !important; font-weight: bold; } /* 140以上 */
+        .v-high { background-color: #ff4b4b !important; color: white !important; font-weight: bold; }
+        .high { background-color: #ffcccc !important; color: #b30000 !important; font-weight: bold; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -85,11 +84,9 @@ if check_password():
             
             if selected_dates:
                 curr_df = df[df['Date'].isin(selected_dates)]
-                # 角度を計算には含めるが、表示用のsummaryからは除外
                 summary = curr_df.groupby('Player').agg({'Speed': ['mean', 'max'], 'Dist': 'max'})
                 summary.columns = ['平均速度', 'MAX速度', '最大飛距離']
                 
-                # 前回比の計算
                 prev_dates = [d for d in all_dates if d not in selected_dates and d < max(selected_dates)]
                 if prev_dates:
                     last_prev = max(prev_dates)
@@ -100,7 +97,6 @@ if check_password():
                 
                 display_df = summary.sort_values('MAX速度', ascending=False).reset_index()
 
-                # --- HTMLテーブル構築 (角度なし) ---
                 table_html = '<table class="feedback-table"><thead><tr>'
                 for col in display_df.columns:
                     table_html += f'<th>{col}</th>'
@@ -114,7 +110,6 @@ if check_password():
                         if col == 'MAX速度':
                             if val >= 150: css_class = ' class="v-high"'
                             elif val >= 140: css_class = ' class="high"'
-                        
                         d_val = f"{val:.1f}" if isinstance(val, (float, int)) else str(val)
                         table_html += f'<td{css_class}>{d_val}</td>'
                     table_html += '</tr>'
@@ -122,7 +117,6 @@ if check_password():
                 st.write(table_html, unsafe_allow_html=True)
 
         else:
-            # 個人分析
             player = st.sidebar.selectbox("選手を選択", sorted(df['Player'].unique()))
             p_df = df[df['Player'] == player].copy()
             st.header(f"👤 {player} 分析")
@@ -134,12 +128,17 @@ if check_password():
             c2.metric("平均速度", f"{p_df['Speed'].mean():.1f} km/h")
             c3.metric("バレル率", f"{p_df['is_barrel'].mean()*100:.1f} %")
 
-            # グラフ表示
+            # --- グラフの軸設定を固定 ---
             trend = p_df.groupby('Date')['Speed'].agg(['mean', 'max']).reset_index()
-            fig = px.line(trend, x='Date', y=['mean', 'max'], markers=True)
+            fig = px.line(trend, x='Date', y=['mean', 'max'], markers=True, 
+                          title="打球速度推移 (平均・最大)",
+                          labels={'value': '打球速度 (km/h)', 'variable': '指標'})
+            
+            # Y軸の範囲を 125 ~ 160 に固定
+            fig.update_layout(yaxis_range=[125, 160])
             st.plotly_chart(fig, use_container_width=True)
 
-            # 個人分析の履歴からは角度を消さずに残しておきます（分析用）
+            st.subheader("📋 詳細スイング履歴")
             hist = p_df[['Date', 'Speed', 'Angle', 'Dist']].sort_values('Date', ascending=False)
             st.write(hist.to_html(classes='feedback-table', index=False, float_format='%.1f'), unsafe_allow_html=True)
 
