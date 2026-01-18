@@ -63,8 +63,7 @@ if check_password():
                         
                         cols = {'ExitSpeed (KMH)': 'Speed', 'Angle': 'Angle', 'Distance (Meters)': 'Dist'}
                         for orig, target in cols.items():
-                            if orig in df.columns:
-                                df[target] = pd.to_numeric(df[orig], errors='coerce')
+                            if orig in df.columns: df[target] = pd.to_numeric(df[orig], errors='coerce')
                         
                         df = df.dropna(subset=['Player', 'Speed'])
                         df = df[df['Speed'] > 0]
@@ -80,67 +79,71 @@ if check_password():
         if mode == "チーム全体分析":
             st.header("📊 チーム打球速度ランキング")
             all_dates = sorted(df['Date'].unique(), reverse=True)
-            selected_dates = st.multiselect("日付を選択", all_dates, default=[all_dates[0]])
+            selected_dates = st.multiselect("日付を選択", all_dates, default=[all_dates[0]], key="team_date")
             
             if selected_dates:
                 curr_df = df[df['Date'].isin(selected_dates)]
                 summary = curr_df.groupby('Player').agg({'Speed': ['mean', 'max'], 'Dist': 'max'})
                 summary.columns = ['平均速度', 'MAX速度', '最大飛距離']
                 
+                # 前回比
                 prev_dates = [d for d in all_dates if d not in selected_dates and d < max(selected_dates)]
                 if prev_dates:
                     last_prev = max(prev_dates)
                     p_avg = df[df['Date'] == last_prev].groupby('Player')['Speed'].mean()
-                    p_max = df[df['Date'] == last_prev].groupby('Player')['Speed'].max()
                     summary['平均比'] = (summary['平均速度'] / p_avg * 100).fillna(0).map(lambda x: f"{x:.0f}%" if x > 0 else "-")
-                    summary['MAX比'] = (summary['MAX速度'] / p_max * 100).fillna(0).map(lambda x: f"{x:.0f}%" if x > 0 else "-")
                 
                 display_df = summary.sort_values('MAX速度', ascending=False).reset_index()
-
+                
                 table_html = '<table class="feedback-table"><thead><tr>'
-                for col in display_df.columns:
-                    table_html += f'<th>{col}</th>'
+                for col in display_df.columns: table_html += f'<th>{col}</th>'
                 table_html += '</tr></thead><tbody>'
-
                 for _, row in display_df.iterrows():
                     table_html += '<tr>'
                     for col in display_df.columns:
                         val = row[col]
-                        css_class = ""
-                        if col == 'MAX速度':
-                            if val >= 150: css_class = ' class="v-high"'
-                            elif val >= 140: css_class = ' class="high"'
+                        css_class = ' class="v-high"' if col == 'MAX速度' and val >= 150 else (' class="high"' if col == 'MAX速度' and val >= 140 else '')
                         d_val = f"{val:.1f}" if isinstance(val, (float, int)) else str(val)
                         table_html += f'<td{css_class}>{d_val}</td>'
                     table_html += '</tr>'
-                table_html += '</tbody></table>'
-                st.write(table_html, unsafe_allow_html=True)
+                st.write(table_html + '</tbody></table>', unsafe_allow_html=True)
 
         else:
             player = st.sidebar.selectbox("選手を選択", sorted(df['Player'].unique()))
-            p_df = df[df['Player'] == player].copy()
             st.header(f"👤 {player} 分析")
-
-            p_df['is_barrel'] = (p_df['Speed'] >= 140) & (p_df['Angle'].between(10, 30))
             
-            c1, c2, c3 = st.columns(3)
-            c1.metric("MAX速度", f"{p_df['Speed'].max():.1f} km/h")
-            c2.metric("平均速度", f"{p_df['Speed'].mean():.1f} km/h")
-            c3.metric("バレル率", f"{p_df['is_barrel'].mean()*100:.1f} %")
-
-            # --- グラフの軸設定を固定 ---
-            trend = p_df.groupby('Date')['Speed'].agg(['mean', 'max']).reset_index()
-            fig = px.line(trend, x='Date', y=['mean', 'max'], markers=True, 
-                          title="打球速度推移 (平均・最大)",
-                          labels={'value': '打球速度 (km/h)', 'variable': '指標'})
+            full_p_df = df[df['Player'] == player].copy()
+            player_dates = sorted(full_p_df['Date'].unique(), reverse=True)
             
-            # Y軸の範囲を 125 ~ 160 に固定
-            fig.update_layout(yaxis_range=[125, 160])
-            st.plotly_chart(fig, use_container_width=True)
+            # --- 個人分析用・日付選択肢 ---
+            analysis_type = st.radio("分析範囲", ["総合（全期間）", "特定の日付を選択"], horizontal=True)
+            
+            if analysis_type == "特定の日付を選択":
+                selected_p_dates = st.multiselect("日付を選択してください", player_dates, default=[player_dates[0]])
+                p_df = full_p_df[full_p_df['Date'].isin(selected_p_dates)]
+            else:
+                p_df = full_p_df.copy()
 
-            st.subheader("📋 詳細スイング履歴")
-            hist = p_df[['Date', 'Speed', 'Angle', 'Dist']].sort_values('Date', ascending=False)
-            st.write(hist.to_html(classes='feedback-table', index=False, float_format='%.1f'), unsafe_allow_html=True)
+            if not p_df.empty:
+                # 指標の表示
+                p_df['is_barrel'] = (p_df['Speed'] >= 140) & (p_df['Angle'].between(10, 30))
+                c1, c2, c3 = st.columns(3)
+                c1.metric("選択期間MAX", f"{p_df['Speed'].max():.1f} km/h")
+                c2.metric("選択期間平均", f"{p_df['Speed'].mean():.1f} km/h")
+                c3.metric("バレル率", f"{p_df['is_barrel'].mean()*100:.1f} %")
+
+                # グラフ（常に全期間の推移を表示して成長を見せる）
+                st.subheader("📈 打球速度の推移（通算）")
+                trend = full_p_df.groupby('Date')['Speed'].agg(['mean', 'max']).reset_index()
+                fig = px.line(trend, x='Date', y=['mean', 'max'], markers=True)
+                fig.update_layout(yaxis_range=[125, 160])
+                st.plotly_chart(fig, use_container_width=True)
+
+                st.subheader("📋 スイング履歴（選択期間）")
+                hist = p_df[['Date', 'Speed', 'Angle', 'Dist']].sort_values(['Date', 'Speed'], ascending=[False, False])
+                st.write(hist.to_html(classes='feedback-table', index=False, float_format='%.1f'), unsafe_allow_html=True)
+            else:
+                st.warning("表示するデータがありません。")
 
     else:
         st.info("データを入れてください。")
