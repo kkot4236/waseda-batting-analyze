@@ -60,24 +60,19 @@ if check_password():
                         df = pd.read_excel(path) if file.endswith('.xlsx') else pd.read_csv(path)
                         df.columns = df.columns.str.strip()
                         
-                        # 姓名の統合や設定
                         if 'Hitter First Name' in df.columns: df['Player'] = df['Hitter First Name']
                         
-                        # 日付処理
                         if 'Hit Created At' in df.columns:
                             df['Date'] = pd.to_datetime(df['Hit Created At'], errors='coerce').dt.date
                         
-                        # 数値変換
                         cols = {'ExitSpeed (KMH)': 'Speed', 'Angle': 'Angle', 'Distance (Meters)': 'Dist', 'Course': 'Course'}
                         for orig, target in cols.items():
                             if orig in df.columns: df[target] = pd.to_numeric(df[orig], errors='coerce')
                         
-                        # データのクリーニング
                         df = df.dropna(subset=['Player', 'Speed', 'Date'])
                         df = df[df['Speed'] > 0]
                         
-                        # --- 1970年問題の修正 ---
-                        # 1971年1月1日以降のデータのみを保持
+                        # 1970年データの除外
                         df = df[df['Date'] > pd.Timestamp('1971-01-01').date()]
                         
                         all_data.append(df)
@@ -99,7 +94,6 @@ if check_password():
                 summary = curr_df.groupby('Player').agg({'Speed': ['mean', 'max'], 'Dist': 'max'})
                 summary.columns = ['平均速度', 'MAX速度', '最大飛距離']
                 
-                # 前回比の計算
                 prev_dates = [d for d in all_dates if d not in selected_dates and d < max(selected_dates)]
                 if prev_dates:
                     last_prev = max(prev_dates)
@@ -137,26 +131,20 @@ if check_password():
                 p_df = full_p_df.copy()
 
             if not p_df.empty:
-                # 指標の表示
                 p_df['is_barrel'] = (p_df['Speed'] >= 140) & (p_df['Angle'].between(10, 30))
                 c1, c2, c3 = st.columns(3)
                 c1.metric("選択期間MAX", f"{p_df['Speed'].max():.1f} km/h")
                 c2.metric("選択期間平均", f"{p_df['Speed'].mean():.1f} km/h")
                 c3.metric("バレル率", f"{p_df['is_barrel'].mean()*100:.1f} %")
 
-                # --- コース別平均速度ヒートマップ ---
+                # --- コース別平均速度ヒートマップ (罫線付き) ---
                 st.subheader("🎯 コース別平均打球速度 (km/h)")
                 
-                # 1-9のコースを3x3の行列に変換 (欠損値は0で埋める)
-                # インデックスを1~9で固定して再構成
                 all_zones = pd.Series(index=range(1, 10), dtype=float)
                 zone_means = p_df.groupby('Course')['Speed'].mean()
                 all_zones.update(zone_means)
-                
-                # Plotlyで表示するために2次元配列(3x3)へ
                 z_data = all_zones.values.reshape(3, 3)
                 
-                # 打数カウント用
                 zone_counts = pd.Series(index=range(1, 10), dtype=float).fillna(0)
                 zone_counts.update(p_df.groupby('Course')['Speed'].count())
                 c_data = zone_counts.values.reshape(3, 3)
@@ -170,13 +158,25 @@ if check_password():
                     text_auto='.1f',
                     aspect="equal"
                 )
+
+                # 罫線(グリッド線)の追加
+                for i in range(4):
+                    # 垂直線
+                    fig_heat.add_shape(type="line", x0=i-0.5, y0=-0.5, x1=i-0.5, y1=2.5,
+                                      line=dict(color="black", width=2))
+                    # 水平線
+                    fig_heat.add_shape(type="line", x0=-0.5, y0=i-0.5, x1=2.5, y1=i-0.5,
+                                      line=dict(color="black", width=2))
+
                 fig_heat.update_traces(
                     hovertemplate="コース: %{x}%{y}<br>平均速度: %{z:.1f} km/h<br>打数: %{customdata}回",
                     customdata=c_data
                 )
+                
+                # 軸のメモリを消してよりゾーンらしくする
+                fig_heat.update_xaxes(side="top")
                 st.plotly_chart(fig_heat, use_container_width=True)
 
-                # グラフ（通算推移）
                 st.subheader("📈 打球速度の推移（通算）")
                 trend = full_p_df.groupby('Date')['Speed'].agg(['mean', 'max']).reset_index()
                 fig = px.line(trend, x='Date', y=['mean', 'max'], markers=True)
