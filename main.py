@@ -24,14 +24,31 @@ if check_password():
         st.set_page_config(layout="wide", page_title="Waseda Hitting Analyze")
         st.session_state["page_config_set"] = True
 
+    # --- デザインの定義 (元のデザインを維持) ---
     st.markdown("""
         <style>
-        .feedback-table { margin: auto; border-collapse: collapse; width: 100%; font-family: sans-serif; border: 1px solid #333; }
-        .feedback-table th { background-color: #444 !important; color: white !important; padding: 12px; border: 1px solid #333; text-align: center !important; }
-        .feedback-table td { padding: 10px; border: 1px solid #ccc; text-align: center !important; font-size: 16px; }
+        .feedback-table {
+            margin: auto;
+            border-collapse: collapse;
+            width: 100%;
+            font-family: sans-serif;
+            border: 1px solid #333;
+        }
+        .feedback-table th {
+            background-color: #444 !important;
+            color: white !important;
+            padding: 12px;
+            border: 1px solid #333;
+            text-align: center !important;
+        }
+        .feedback-table td {
+            padding: 10px;
+            border: 1px solid #ccc;
+            text-align: center !important;
+            font-size: 16px;
+        }
         .v-high { background-color: #ff4b4b !important; color: white !important; font-weight: bold; }
         .high { background-color: #ffcccc !important; color: #b30000 !important; font-weight: bold; }
-        .blast-metric { background-color: #e8f4f8; padding: 10px; border-radius: 5px; border-left: 5px solid #2980b9; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -39,13 +56,10 @@ if check_password():
     def load_combined_data():
         all_rapsodo = []
         all_blast = []
-        
-        # ファイル探索
         files = glob.glob("**/*.csv", recursive=True) + glob.glob("**/*.xlsx", recursive=True)
         
         for path in files:
             try:
-                # 文字コード対応
                 try:
                     df = pd.read_csv(path, encoding='utf-8')
                 except:
@@ -53,41 +67,31 @@ if check_password():
                 
                 df.columns = [c.strip() for c in df.columns]
 
-                # BLASTデータの判定
-                if 'バットスピード' in df.columns or 'アッパースイング度' in df.columns:
-                    # BLASTの処理
+                if 'バットスピード' in df.columns:
+                    # BLASTデータの処理
                     df['Player'] = df['Name'].astype(str)
                     df['Date'] = pd.to_datetime(df['Date']).dt.date
-                    # MPHをKMHに変換
                     df['BatSpeed_kmh'] = pd.to_numeric(df['バットスピード'], errors='coerce') * 1.60934
                     df['SwingTime'] = pd.to_numeric(df['スイング時間'], errors='coerce')
                     df['AttackAngle'] = pd.to_numeric(df['アッパースイング度'], errors='coerce')
                     all_blast.append(df[['Player', 'Date', 'BatSpeed_kmh', 'SwingTime', 'AttackAngle']])
-                
                 else:
-                    # ラプソード（打球データ）の処理
+                    # ラプソードデータの処理
                     p_col = next((c for c in ['Hitter First Name', 'Hitter', 'Player', 'Batter'] if c in df.columns), None)
                     if not p_col: continue
-                    
                     df['Player'] = df[p_col].astype(str)
                     date_col = next((c for c in ['Hit Created At', 'Date', 'Pitch Created At'] if c in df.columns), None)
                     if date_col:
                         df['Date'] = pd.to_datetime(df[date_col], errors='coerce').dt.date
-                    
-                    # 打球データの指標
-                    cols_map = {'ExitSpeed (KMH)': 'Speed', 'ExitSpeed': 'Speed', 'Angle': 'Angle', 'Distance (Meters)': 'Dist', 'Course': 'Course'}
+                    cols_map = {'ExitSpeed (KMH)': 'Speed', 'Angle': 'Angle', 'Distance (Meters)': 'Dist', 'Course': 'Course'}
                     for orig, target in cols_map.items():
                         if orig in df.columns: df[target] = pd.to_numeric(df[orig], errors='coerce')
-                    
                     df = df.dropna(subset=['Player', 'Speed', 'Date'])
-                    df = df[df['Speed'] > 0]
                     all_rapsodo.append(df)
-            except:
-                continue
+            except: continue
                 
-        rapsodo_df = pd.concat(all_rapsodo, ignore_index=True) if all_rapsodo else pd.DataFrame()
-        blast_df = pd.concat(all_blast, ignore_index=True) if all_blast else pd.DataFrame()
-        return rapsodo_df, blast_df
+        return pd.concat(all_rapsodo, ignore_index=True) if all_rapsodo else pd.DataFrame(), \
+               pd.concat(all_blast, ignore_index=True) if all_blast else pd.DataFrame()
 
     r_df, b_df = load_combined_data()
 
@@ -104,13 +108,24 @@ if check_password():
                 summary = curr_df.groupby('Player').agg({'Speed': ['mean', 'max'], 'Dist': 'max'}).reset_index()
                 summary.columns = ['Player', '平均速度', 'MAX速度', '最大飛距離']
                 
-                # BLASTデータもあれば平均値をマージ
-                if not b_df.empty:
-                    b_curr = b_df[b_df['Date'].isin(selected_dates)].groupby('Player')['BatSpeed_kmh'].mean().reset_index()
-                    b_curr.columns = ['Player', '平均バット速度']
-                    summary = pd.merge(summary, b_curr, on='Player', how='left')
-
-                st.dataframe(summary.sort_values('MAX速度', ascending=False), use_container_width=True)
+                display_df = summary.sort_values('MAX速度', ascending=False).reset_index(drop=True)
+                
+                # 元のデザイン（HTMLテーブル）で描画
+                table_html = '<table class="feedback-table"><thead><tr>'
+                for col in display_df.columns: table_html += f'<th>{col}</th>'
+                table_html += '</tr></thead><tbody>'
+                for _, row in display_df.iterrows():
+                    table_html += '<tr>'
+                    for col in display_df.columns:
+                        val = row[col]
+                        css_class = ''
+                        if col == 'MAX速度':
+                            if val >= 150: css_class = ' class="v-high"'
+                            elif val >= 140: css_class = ' class="high"'
+                        d_val = f"{val:.1f}" if isinstance(val, (float, int)) else str(val)
+                        table_html += f'<td{css_class}>{d_val}</td>'
+                    table_html += '</tr>'
+                st.write(table_html + '</tbody></table>', unsafe_allow_html=True)
 
         else:
             player = st.sidebar.selectbox("選手を選択", sorted(r_df['Player'].unique()))
@@ -120,66 +135,47 @@ if check_password():
             b_df_full = b_df[b_df['Player'] == player].copy() if not b_df.empty else pd.DataFrame()
             
             player_dates = sorted(p_df_full['Date'].unique(), reverse=True)
-            analysis_type = st.radio("分析範囲", ["総合（全期間）", "特定の日付を選択"], horizontal=True)
+            # keyを指定して名前の横の数字を防止
+            analysis_type = st.radio("分析範囲", ["総合（全期間）", "特定の日付を選択"], horizontal=True, key="analysis_type_radio")
             
             if analysis_type == "特定の日付を選択":
-                sel_dates = st.multiselect("日付を選択", player_dates, default=[player_dates[0]] if player_dates else [])
+                sel_dates = st.multiselect("日付を選択", player_dates, default=[player_dates[0]] if player_dates else [], key="date_select_multi")
                 p_df = p_df_full[p_df_full['Date'].isin(sel_dates)]
                 b_df_sub = b_df_full[b_df_full['Date'].isin(sel_dates)] if not b_df_full.empty else pd.DataFrame()
             else:
                 p_df = p_df_full
                 b_df_sub = b_df_full
 
-            # --- 指標表示 ---
-            st.subheader("🚀 主要指標")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.write("**【ラプソード】打球指標**")
-                st.metric("MAX打球速度", f"{p_df['Speed'].max():.1f} km/h")
-                st.metric("平均打球速度", f"{p_df['Speed'].mean():.1f} km/h")
-            
-            with col2:
-                st.write("**【BLAST】スイング指標**")
-                if not b_df_sub.empty:
-                    st.metric("平均バット速度", f"{b_df_sub['BatSpeed_kmh'].mean():.1f} km/h")
-                    st.metric("スイング時間", f"{b_df_sub['SwingTime'].mean():.2f} 秒")
-                else:
-                    st.info("BLASTデータなし")
+            if not p_df.empty:
+                # --- 指標表示 ---
+                c1, c2, c3 = st.columns(3)
+                c1.metric("選択期間MAX", f"{p_df['Speed'].max():.1f} km/h")
+                c2.metric("選択期間平均", f"{p_df['Speed'].mean():.1f} km/h")
+                c3.metric("バレル率", f"{( (p_df['Speed']>=140) & (p_df['Angle'].between(10,30)) ).mean()*100:.1f} %")
 
-            with col3:
-                st.write("**【安定性】**")
-                st.metric("バレル率", f"{( (p_df['Speed']>=140) & (p_df['Angle'].between(10,30)) ).mean()*100:.1f} %")
                 if not b_df_sub.empty:
-                    st.metric("アッパースイング度", f"{b_df_sub['AttackAngle'].mean():.1f} °")
+                    st.markdown("#### ⚡️ BLASTスイング指標 (平均)")
+                    bc1, bc2, bc3 = st.columns(3)
+                    bc1.metric("バット速度", f"{b_df_sub['BatSpeed_kmh'].mean():.1f} km/h")
+                    bc2.metric("スイング時間", f"{b_df_sub['SwingTime'].mean():.3f} 秒")
+                    bc3.metric("アタック角", f"{b_df_sub['AttackAngle'].mean():.1f} °")
 
-            # --- グラフ表示 ---
-            st.divider()
-            c_left, c_right = st.columns(2)
-            
-            with c_left:
-                st.subheader("🎯 コース別平均速度")
-                # 前回のヒートマップ処理
+                # --- ヒートマップ ---
+                st.subheader("🎯 コース別平均打球速度 (km/h)")
                 all_zones = pd.Series(index=range(1, 10), dtype=float)
                 all_zones.update(p_df.groupby('Course')['Speed'].mean())
                 z_data = all_zones.values.reshape(3, 3)
+                
                 fig_heat = px.imshow(z_data, x=['左', '中', '右'], y=['高', '中', '低'],
                                      color_continuous_scale='Reds', text_auto='.1f', aspect="equal")
-                st.plotly_chart(fig_heat, use_container_width=True)
+                # 枠線の追加
+                for i in range(4):
+                    fig_heat.add_shape(type="line", x0=i-0.5, y0=-0.5, x1=i-0.5, y1=2.5, line=dict(color="black", width=2))
+                    fig_heat.add_shape(type="line", x0=-0.5, y0=i-0.5, x1=2.5, y1=i-0.5, line=dict(color="black", width=2))
+                fig_heat.update_xaxes(side="top")
+                st.plotly_chart(fig_heat, use_container_width=True, key="course_heat_map")
 
-            with c_right:
-                st.subheader("📈 速度相関")
-                # 打球速度とバット速度の推移を並べる
-                combined_trend = p_df.groupby('Date')['Speed'].max().reset_index()
-                if not b_df_sub.empty:
-                    b_trend = b_df_sub.groupby('Date')['BatSpeed_kmh'].mean().reset_index()
-                    combined_trend = pd.merge(combined_trend, b_trend, on='Date', how='outer')
-                
-                fig_trend = px.line(combined_trend, x='Date', y=['Speed', 'BatSpeed_kmh'], markers=True,
-                                    labels={'value': '速度 (km/h)', 'variable': '指標'})
-                st.plotly_chart(fig_trend, use_container_width=True)
-
-            st.subheader("📋 スイング履歴")
-            st.dataframe(p_df[['Date', 'Speed', 'Angle', 'Dist', 'Course']].sort_values('Date', ascending=False), use_container_width=True)
-
-    else:
-        st.info("データファイルを配置してください。ラプソードとBLASTの両方を自動認識します。")
+                # --- 履歴テーブル (以前のHTML形式に戻す) ---
+                st.subheader("📋 スイング履歴（選択期間）")
+                hist = p_df[['Date', 'Speed', 'Angle', 'Dist', 'Course']].sort_values(['Date', 'Speed'], ascending=[False, False])
+                st.write(hist.to_html(classes='feedback-table', index=False, float_format='%.1f'), unsafe_allow_html=True)
