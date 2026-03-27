@@ -10,13 +10,19 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = None
     if st.session_state["password_correct"] == True: return True
+    
     def password_entered():
-        if st.session_state["password_input"] == "wbc1901":
+        # ここを修正しました（keyの一致）
+        if st.session_state["password_input_widget"] == "wbc1901":
             st.session_state["password_correct"] = True
         else:
             st.session_state["password_correct"] = False
+            
     st.title("⚾️ 早稲田大学野球部 打撃分析システム")
-    st.text_input("パスワードを入力", type="password", on_change=password_entered, key="password_input_global")
+    st.text_input("パスワードを入力", type="password", on_change=password_entered, key="password_input_widget")
+    
+    if st.session_state["password_correct"] == False:
+        st.error("😕 パスワードが違います")
     return False
 
 if check_password():
@@ -130,7 +136,6 @@ if check_password():
                 else:
                     display_df = summary
 
-                # MAX打球速度順にソート
                 display_df = display_df.sort_values('MAX打球速度', ascending=False).reset_index(drop=True)
                 
                 # HTMLテーブル描画
@@ -156,7 +161,6 @@ if check_password():
                             d_val = f"{val:.1f}"
                         else:
                             d_val = str(val)
-                            
                         table_html += f'<td{css_class}>{d_val}</td>'
                     table_html += '</tr>'
                 st.write(table_html + '</tbody></table>', unsafe_allow_html=True)
@@ -183,13 +187,11 @@ if check_password():
                 b_df_sub = b_df_full
 
             if not p_df.empty:
-                # --- 主要指標表示 ---
                 c1, c2, c3 = st.columns(3)
                 c1.metric("選択期間MAX打球速度", f"{p_df['Speed'].max():.1f} km/h")
                 c2.metric("選択期間平均打球速度", f"{p_df['Speed'].mean():.1f} km/h")
                 c3.metric("バレル率", f"{( (p_df['Speed']>=140) & (p_df['Angle'].between(10,30)) ).mean()*100:.1f} %")
 
-                # BLAST指標の表示
                 if not b_df_sub.empty:
                     st.markdown("---")
                     st.markdown("#### ⚡️ BLASTスイング指標 (選択期間平均)")
@@ -203,7 +205,6 @@ if check_password():
                 else:
                     st.info("※この期間のBLASTデータはありません。")
 
-                # --- ヒートマップ ---
                 st.subheader("🎯 コース別平均打球速度 (km/h)")
                 all_zones = pd.Series(index=range(1, 10), dtype=float)
                 all_zones.update(p_df.groupby('Course')['Speed'].mean())
@@ -216,12 +217,9 @@ if check_password():
                 fig_heat.update_xaxes(side="top")
                 st.plotly_chart(fig_heat, use_container_width=True, key="p_heatmap_plotly")
 
-                # --- 履歴テーブル ---
                 st.subheader("📋 スイング履歴（選択期間）")
                 hist = p_df[['Date', 'Speed', 'Angle', 'Dist', 'Course']].sort_values(['Date', 'Speed'], ascending=[False, False])
                 st.write(hist.to_html(classes='feedback-table', index=False, float_format='%.1f'), unsafe_allow_html=True)
-            else:
-                st.warning("表示できるデータがありません。")
 
     else:
-        st.info("CSV/Excelファイルを配置してください。自動で読み込みます。")
+        st.info("CSV/Excelファイルを配置してください。")
