@@ -85,7 +85,7 @@ def load_combined_data():
     return r_out, b_out
 
 # アプリのメイン処理
-st.title("⚾️ 早稲田大学野球部 打撃分析システム")
+st.title("早稲田大学野球部 打撃分析システム")
 
 r_df, b_df = load_combined_data()
 
@@ -148,7 +148,7 @@ if not r_df.empty:
     # =========================================================
     else:
         player = st.sidebar.selectbox("選手を選択", sorted(r_df['Player'].unique()), key="player_select_sidebar")
-        st.header(f"👤 {player} 分析")
+        st.header(f"◯ {player} 分析")
         
         p_df_full = r_df[r_df['Player'] == player].copy()
         b_df_full = b_df[b_df['Player'] == player].copy() if not b_df.empty else pd.DataFrame()
@@ -172,7 +172,7 @@ if not r_df.empty:
 
             if not b_df_sub.empty:
                 st.markdown("---")
-                st.markdown("#### ⚡️ BLASTスイング指標 (選択期間平均)")
+                st.markdown("#### ・ BLASTスイング指標 (選択期間平均)")
                 bc1, bc2, bc3 = st.columns(3)
                 bs = b_df_sub['BatSpeed_kmh'].mean()
                 bt = b_df_sub['SwingTime'].mean()
@@ -183,7 +183,7 @@ if not r_df.empty:
             else:
                 st.info("※この期間のBLASTデータはありません。")
 
-            st.subheader("🎯 コース別平均打球速度 (km/h)")
+            st.subheader("・ コース別平均打球速度 (km/h)")
             all_zones = pd.Series(index=range(1, 10), dtype=float)
             all_zones.update(p_df.groupby('Course')['Speed'].mean())
             z_data = all_zones.values.reshape(3, 3)
@@ -195,7 +195,7 @@ if not r_df.empty:
             fig_heat.update_xaxes(side="top")
             st.plotly_chart(fig_heat, use_container_width=True, key="p_heatmap_plotly")
 
-            st.subheader("📋 スイング履歴（選択期間）")
+            st.subheader("・ スイング履歴（選択期間）")
             hist = p_df[['Date', 'Speed', 'Angle', 'Dist', 'Course']].sort_values(['Date', 'Speed'], ascending=[False, False])
             st.write(hist.to_html(classes='feedback-table', index=False, float_format='%.1f'), unsafe_allow_html=True)
 
