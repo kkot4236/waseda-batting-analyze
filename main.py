@@ -40,7 +40,6 @@ st.markdown("""
 def load_combined_data():
     all_rapsodo = []
     all_blast = []
-    # 直下およびサブディレクトリの全CSV/Excelを検索
     files = glob.glob("**/*.csv", recursive=True) + glob.glob("**/*.xlsx", recursive=True)
     
     for path in files:
@@ -90,17 +89,15 @@ st.title("早稲田大学野球部 打撃分析システム")
 
 r_df, b_df = load_combined_data()
 
-# いずれかのデータが存在する場合
 if not r_df.empty or not b_df.empty:
     mode = st.sidebar.radio("メニュー", ["チーム全体分析", "個人詳細分析"], key="main_mode_switch")
 
     # =========================================================
-    # チーム全体分析（ランキング表）
+    # チーム全体分析
     # =========================================================
     if mode == "チーム全体分析":
         st.header("📊 チーム打撃分析ランキング")
         
-        # 全データから日付を抽出（和集合）
         dates_r = set(r_df['Date'].unique()) if not r_df.empty else set()
         dates_b = set(b_df['Date'].unique()) if not b_df.empty else set()
         combined_dates = sorted(list(dates_r | dates_b), reverse=True)
@@ -108,7 +105,6 @@ if not r_df.empty or not b_df.empty:
         selected_dates = st.multiselect("日付を選択", combined_dates, default=[combined_dates[0]] if combined_dates else [], key="team_date_multiselect")
         
         if selected_dates:
-            # 1. 打球データの集計
             if not r_df.empty:
                 curr_r = r_df[r_df['Date'].isin(selected_dates)]
                 summary_r = curr_r.groupby('Player').agg({'Speed': ['mean', 'max'], 'Dist': 'max'}).reset_index()
@@ -116,7 +112,6 @@ if not r_df.empty or not b_df.empty:
             else:
                 summary_r = pd.DataFrame(columns=['Player', '平均打球速度', 'MAX打球速度', '最大飛距離'])
 
-            # 2. BLASTデータの集計
             if not b_df.empty:
                 curr_b = b_df[b_df['Date'].isin(selected_dates)]
                 summary_b = curr_b.groupby('Player').agg({
@@ -127,14 +122,10 @@ if not r_df.empty or not b_df.empty:
             else:
                 summary_b = pd.DataFrame(columns=['Player', '平均バット速度', '平均スイング時間'])
 
-            # 3. 外部結合 (how='outer') により、どちらか一方でもあれば表示
             display_df = pd.merge(summary_r, summary_b, on='Player', how='outer')
-
-            # 打球速度があればそれでソート、なければバット速度でソート
             sort_col = 'MAX打球速度' if 'MAX打球速度' in display_df.columns and not display_df['MAX打球速度'].isnull().all() else '平均バット速度'
             display_df = display_df.sort_values(sort_col, ascending=False).reset_index(drop=True)
             
-            # HTMLテーブル描画
             table_html = '<table class="feedback-table"><thead><tr>'
             for col in display_df.columns:
                 table_html += f'<th>{col}</th>'
@@ -152,7 +143,7 @@ if not r_df.empty or not b_df.empty:
                     if pd.isna(val):
                         d_val = "-"
                     elif col == '平均スイング時間':
-                        d_val = f"{val:.3f}"
+                        d_val = f"{val:.2f}"  # 小数点第2位に修正
                     elif isinstance(val, (float, int)):
                         d_val = f"{val:.1f}"
                     else:
@@ -165,7 +156,6 @@ if not r_df.empty or not b_df.empty:
     # 個人詳細分析
     # =========================================================
     else:
-        # 選手リストも両方のデータから統合
         players_r = set(r_df['Player'].unique()) if not r_df.empty else set()
         players_b = set(b_df['Player'].unique()) if not b_df.empty else set()
         all_players = sorted(list(players_r | players_b))
@@ -176,7 +166,6 @@ if not r_df.empty or not b_df.empty:
         p_df_full = r_df[r_df['Player'] == player].copy() if not r_df.empty else pd.DataFrame()
         b_df_full = b_df[b_df['Player'] == player].copy() if not b_df.empty else pd.DataFrame()
         
-        # 選手が持っている全日付を抽出
         p_dates_r = set(p_df_full['Date'].unique()) if not p_df_full.empty else set()
         p_dates_b = set(b_df_full['Date'].unique()) if not b_df_full.empty else set()
         player_dates = sorted(list(p_dates_r | p_dates_b), reverse=True)
@@ -191,7 +180,6 @@ if not r_df.empty or not b_df.empty:
             p_df = p_df_full
             b_df_sub = b_df_full
 
-        # --- 打球指標の表示 ---
         if not p_df.empty:
             c1, c2, c3 = st.columns(3)
             c1.metric("選択期間MAX打球速度", f"{p_df['Speed'].max():.1f} km/h")
@@ -200,7 +188,6 @@ if not r_df.empty or not b_df.empty:
         else:
             st.info("※この期間の打球データはありません。")
 
-        # --- BLAST指標の表示 ---
         if not b_df_sub.empty:
             st.markdown("---")
             st.markdown("#### ⚡️ BLASTスイング指標 (選択期間平均)")
@@ -209,12 +196,11 @@ if not r_df.empty or not b_df.empty:
             bt = b_df_sub['SwingTime'].mean()
             ba = b_df_sub['AttackAngle'].mean()
             bc1.metric("平均バット速度", f"{bs:.1f} km/h" if pd.notnull(bs) else "-")
-            bc2.metric("平均スイング時間", f"{bt:.3f} 秒" if pd.notnull(bt) else "-")
+            bc2.metric("平均スイング時間", f"{bt:.2f} 秒" if pd.notnull(bt) else "-") # 小数点第2位に修正
             bc3.metric("平均アタック角", f"{ba:.1f} °" if pd.notnull(ba) else "-")
         else:
             st.info("※この期間のBLASTデータはありません。")
 
-        # --- ヒートマップ (打球データがある場合のみ) ---
         if not p_df.empty and 'Course' in p_df.columns:
             st.subheader("🎯 コース別平均打球速度 (km/h)")
             all_zones = pd.Series(index=range(1, 10), dtype=float)
